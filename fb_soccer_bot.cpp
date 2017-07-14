@@ -1,4 +1,5 @@
 // Bot that uses OpenCV to play the Facebook Messenger Soccer game
+// author: Neelay Junnarkar
 #include <Windows.h>
 #include <iostream>
 #include <thread>
