@@ -5,33 +5,34 @@
 #include <opencv2/opencv.hpp>
 #include <fstream>
 #include <chrono>
+#include <array>
 
 using namespace cv;
 using namespace std;
 
-void hwnd2mat(HWND hwnd, unsigned shrink, Mat &out, const Rect &windowsize) {
+//#define DISP_CURSOR_COORDS
+
+void hwnd2mat(const HWND &hwnd, const unsigned shrink, Mat &out, const Rect &windowsize) {
 
 	HDC hwindowDC, hwindowCompatibleDC;
 
-	int height, width, srcheight, srcwidth, srcx, srcy;
-	HBITMAP hbwindow;
 	BITMAPINFOHEADER  bi;
 
 	hwindowDC = GetDC(hwnd);
 	hwindowCompatibleDC = CreateCompatibleDC(hwindowDC);
 	SetStretchBltMode(hwindowCompatibleDC, COLORONCOLOR);
 
-	srcheight = windowsize.height;
-	srcwidth = windowsize.width;
-	srcx = windowsize.x;
-	srcy = windowsize.y;
-	height = windowsize.height / shrink;
-	width = windowsize.width / shrink;
+	const int srcheight = windowsize.height;
+	const int srcwidth = windowsize.width;
+	const int srcx = windowsize.x;
+	const int srcy = windowsize.y;
+	const int height = windowsize.height / shrink;
+	const int width = windowsize.width / shrink;
 
 	out.create(height, width, CV_8UC4);
 
 	// create a bitmap
-	hbwindow = CreateCompatibleBitmap(hwindowDC, width, height);
+	const HBITMAP hbwindow = CreateCompatibleBitmap(hwindowDC, width, height);
 	bi.biSize = sizeof(BITMAPINFOHEADER);    //http://msdn.microsoft.com/en-us/library/windows/window/dd183402%28v=vs.85%29.aspx
 	bi.biWidth = width;
 	bi.biHeight = -height;  //this is the line that makes it draw upside down or not
@@ -64,7 +65,7 @@ bool out_of_bounds(const POINT &pos, const Rect &bounds) {
 }
 
 //returns false on read error, true on success
-bool read_gray_img(unsigned shrink, Mat &out, const Rect &roi) {
+bool read_gray_img(const unsigned shrink, Mat &out, const Rect &roi) {
 
 	hwnd2mat(GetDesktopWindow(), shrink, out, roi);
 
@@ -76,49 +77,50 @@ bool read_gray_img(unsigned shrink, Mat &out, const Rect &roi) {
 }
 
 //Use HoughCircles to find circles in the img
-void find_circles(const Mat &gray_img, vector<Vec3f> &out_circles, int min_radius, int max_radius) {
+void find_circles(const Mat &gray_img, vector<Vec3f> &out_circles, const int min_radius, const int max_radius) {
 	HoughCircles(gray_img, out_circles, HOUGH_GRADIENT, 1, 10, 100, 30, min_radius, max_radius);
 }
 
 //draw the passed circles and their centers onto the imge
 void draw_circles(const vector<Vec3f> &circles, Mat &img) {
 	for(size_t i = 0; i < circles.size(); ++i) {
-		Vec3i c = circles[i];
+		const Vec3i &c = circles[i];
 		circle(img, Point(c[0], c[1]), c[2], 0, 3, LINE_AA); //circle
 		circle(img, Point(c[0], c[1]), 2, 0, 3, LINE_AA); //center
 	}
 }
 
-double min(double a, double b) {
+double min(const double &a, const double &b) {
 	return a < b ? a : b;
 }
-double max(double a, double b) {
+double max(const double &a, const double &b) {
 	return a > b ? a : b;
 }
+
 int main() {
 
 	using namespace std::chrono;
-	int shrink = 2.0;
-	double drop_factor = 2.5;
-	int min_radius = floor(40.0 / shrink);
-	int max_radius = ceil(70.0 / shrink);
+	const int shrink = 2;
+	const double drop_factor = 2.5;
+	const int min_radius = (int)floor(40.0 / shrink); // 40
+	const int max_radius = (int)ceil(70.0 / shrink); //70
 
+	const std::vector<int> dy_s = {0};
 
-	//(737, 205), (1140, 804)
 	Rect rect_fitted; //roi
-	rect_fitted.x = 737;
+	rect_fitted.x = 725;
 	rect_fitted.y = 205;
-	rect_fitted.width = 1140-737;
-	rect_fitted.height = 804-205;
+	rect_fitted.width = 1125-725;
+	rect_fitted.height = 845-205;
 
 	Rect click_area{rect_fitted};
-	int shift = 0;
+	const int shift = 0;
 	click_area.y += shift;
 	click_area.height -= shift;
 
-	//double accel = 4.5 * pow(10, -15);
-	double accel = 100 * pow(10, -15);
-	double v0 = -1;
+	const double accel = 50 * pow(10, -15);
+	//const double accel = 100 * pow(10, -15);
+	_int64 v0 = -1;
 
 	Mat img;
 	vector<Vec3f> circles;
@@ -128,32 +130,36 @@ int main() {
 	bool last_dropping = false;
 
 	std::this_thread::sleep_for(std::chrono::seconds(5));
-	high_resolution_clock::time_point t0 = high_resolution_clock::now();
+
+	cout << "Beginning" << endl;
+
+	//const high_resolution_clock::time_point t0 = high_resolution_clock::now();
 
 	while(true) {
-		high_resolution_clock::time_point t1 = high_resolution_clock::now();
+#if defined(DISP_CURSOR_COORDS)
+		GetCursorPos(&mouse);
+		std::cout << mouse.x << " " << mouse.y << "\n";
+#endif
+		const high_resolution_clock::time_point t1 = high_resolution_clock::now();
 		read_gray_img(shrink, img, rect_fitted);
-		high_resolution_clock::time_point t1_5 = high_resolution_clock::now();
 		find_circles(img, circles, min_radius, max_radius);
-
 
 		if(circles.size() < 1)
 			continue;
 
-
 		for(const Vec3f &pt : circles) {
 			mouse.x = pt[0] * shrink + rect_fitted.x;
 			mouse.y = pt[1] * shrink + rect_fitted.y;
-			int y_temp = mouse.y;
+			const int y_temp = mouse.y;
 
 			if(last_y != -1 && mouse.y > last_y) {
-
-				high_resolution_clock::time_point t2 = high_resolution_clock::now();
-				double dt = duration_cast<nanoseconds>(t2 - t1).count();
+				//left_click(POINT{mouse.x, (LONG)min(mouse.y + 100, click_area.y + click_area.height)});
+				const high_resolution_clock::time_point t2 = high_resolution_clock::now();
+				const _int64 dt = duration_cast<nanoseconds>(t2 - t1).count();
 				if(last_dropping) { //if it has been dropping for 2+ frames, calculate new v0, otherwise use v0 from some old state
-					v0 = (mouse.y - last_y) / dt;// duration_cast<nanoseconds>(t1_5 - t1).count();
+					v0 = (mouse.y - last_y) / dt;
 				}
-				double dy = max(v0*dt + 0.5*accel * pow(dt, 2), 100);
+				const double dy = max(v0*dt + 0.5*accel * pow(dt, 2), 100);
 				mouse.y += dy;
 				mouse.y = min(mouse.y, click_area.y + click_area.height);
 				last_dropping = true;
@@ -161,10 +167,15 @@ int main() {
 			} else if (mouse.y < last_y) {
 				last_dropping = false;
 			}
-	
-			if(!out_of_bounds(mouse, click_area)) {
-				left_click(mouse);
-				last_y = y_temp;
+			for(int dy : dy_s) {
+				POINT temp;
+				temp.x = mouse.x;
+				temp.y = mouse.y + dy;
+
+				if(!out_of_bounds(temp, click_area)) {
+					left_click(temp);
+					last_y = y_temp;
+				}
 			}
 		}
 	}
