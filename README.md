@@ -1,5 +1,4 @@
 # Facebook Soccer Game Bot
-==========================
 
 author: Neelay Junnarkar
 
